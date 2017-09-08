@@ -5,12 +5,10 @@ library(RColorBrewer)
 library(rgdal)
 library(shinythemes)
 library(dplyr)
-library(rsconnect)
 
 # Load data
-crime <- readOGR(dsn = "data", layer = "NIJ_Nov2016_Crime")
-crime <- spTransform(crime, CRS("+init=epsg:4326"))
-crime$occ_date <- as.Date(crime$occ_date)
+d <- read.csv("./data/NIJ.csv",stringsAsFactors = F)
+d$date <- as.Date(d$date)
 
 # --------------------
 # Define UI
@@ -18,12 +16,23 @@ crime$occ_date <- as.Date(crime$occ_date)
 
 ui <- fluidPage(
   theme = shinytheme("superhero"),
-  titlePanel("NIJ Crimes"),
+  titlePanel("Crime Locations in Portland, Oregon"),
   leafletOutput("mymap"),
-  p(),
-  selectInput("cat", "Choose a Crime Type:",as.vector(unique(crime$CATEGORY))),
-  dateInput("date1", "Start Date:", value = "2016-11-01"),
-  dateInput("date2", "End Date:",value = "2016-11-30")
+  p(""),
+  helpText("This application allows the user to specify a crime type and 
+           a time interval to display the locations of crimes in Portland, Oregon."),
+  fluidRow(
+    column(width = 4,
+           selectInput("cat", "Choose a Crime Type:",as.vector(unique(d$category)))
+    ),
+    column(width = 3, offset = 2,
+           dateRangeInput('date',
+                          label = 'Date range:',
+                          start = "2017-05-01", 
+                          end = "2017-05-31",
+                          min = min(d$date),
+                          max = max(d$date)
+           )))
 )
 
 # --------------------
@@ -33,19 +42,20 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   filteredData <- reactive({
-    crime[crime$CATEGORY==input$cat & crime$occ_date>as.Date(input$date1) &
-            crime$occ_date<as.Date(input$date2),]
+    d %>% filter(category==input$cat,date>=input$date[1],
+                 date<input$date[2])
   })
   
   # Create the Map
   output$mymap <- renderLeaflet({
-    crime %>% leaflet() %>% addTiles() %>%
-      fitBounds(bbox(crime)[1,1], bbox(crime)[2,1],bbox(crime)[1,2], bbox(crime)[2,2])
+    leaflet() %>% addTiles() %>%
+      fitBounds(min(d$lon),min(d$lat),max(d$lon),max(d$lat))
   })
   
   # Create Circles
   observe({
-    leafletProxy("mymap",data=filteredData()) %>% clearShapes() %>% addCircles()
+    leafletProxy("mymap",data=filteredData()) %>% clearShapes() %>%
+      addCircles(~lon,~lat)
   })
   
 }
@@ -55,5 +65,9 @@ server <- function(input, output, session) {
 # --------------------
 
 shinyApp(ui, server)
-#rsconnect::deployApp()
 
+# --------------------
+# Deploy App
+# --------------------
+
+#rsconnect::deployApp()
